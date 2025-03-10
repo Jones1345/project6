@@ -1,0 +1,169 @@
+Payment.php
+
+<?php
+session_start();
+include "db.php";
+
+// Require login for purchase
+if (!isset($_SESSION["user"])) {
+    header("Location: login.php?error=Please log in to make a purchase.");
+    exit;
+}
+
+// Get user details
+$username = $_SESSION["user"];
+$role = $_SESSION["role"];
+
+// Calculate total price and prepare medicine list
+$total_amount = 0;
+$medicine_list = [];
+
+if (!empty($_SESSION["cart"])) {
+    foreach ($_SESSION["cart"] as $id => $item) {
+        $medicine_list[] = $item["name"] . " (x" . $item["quantity"] . ")";
+        $total_amount += $item["price"] * $item["quantity"];
+    }
+}
+
+// Process the purchase
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    if (!empty($medicine_list)) {
+        $medicine_names = implode(", ", $medicine_list);
+        
+        // Insert purchase details into the database
+        $stmt = $conn->prepare("INSERT INTO purchases (username, role, medicines, total_amount) VALUES (?, ?, ?, ?)");
+        $stmt->bind_param("sssd", $username, $role, $medicine_names, $total_amount);
+        
+        if ($stmt->execute()) {
+            // Clear cart
+            $_SESSION["cart"] = [];
+
+            // Redirect based on role
+            switch ($role) {
+                case 'admin':
+                    header("Location: admin_home.php?success=Purchase recorded successfully!");
+                    break;
+                case 'manager':
+                    header("Location: manager_home.php?success=Purchase recorded successfully!");
+                    break;
+                case 'salesman':
+                    header("Location: salesman_home.php?success=Purchase recorded successfully!");
+                    break;
+                default:
+                    header("Location: index.php?success=Purchase completed!");
+            }
+            exit;
+        } else {
+            echo "<p style='color: red;'>Error processing purchase. Try again.</p>";
+        }
+    } else {
+        echo "<p style='color: red;'>Your cart is empty!</p>";
+    }
+}
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment - Pharmacy</title>
+    <link rel="stylesheet" href="payment.css?v=<?php echo time(); ?>">
+</head>
+<body>
+    <div class="container">
+        <h2>💳 Payment Page</h2>
+
+        <!-- Display Cart Items -->
+        <h3>🛒 Items in Your Cart:</h3>
+        <ul>
+            <?php if (!empty($medicine_list)): ?>
+                <?php foreach ($medicine_list as $medicine): ?>
+                    <li><?= htmlspecialchars($medicine) ?></li>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <p>Your cart is empty.</p>
+            <?php endif; ?>
+        </ul>
+
+        <!-- Display Total Price -->
+        <h3>Total Amount: <span class="price">$<?= number_format($total_amount, 2) ?></span></h3>
+
+        <!-- Payment Form -->
+        <form method="POST">
+            <label>Card Number:</label>
+            <input type="text" name="card_number" required>
+
+            <label>Expiry Date:</label>
+            <input type="month" name="expiry_date" required>
+
+            <label>CVV:</label>
+            <input type="text" name="cvv" required>
+
+            <button type="submit">Complete Purchase</button>
+        </form>
+    </div>
+</body>
+</html>
+
+
+CREATE TABLE IF NOT EXISTS purchases (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    role ENUM('admin', 'manager', 'salesman', 'user') NOT NULL,
+    medicines TEXT NOT NULL,
+    total_amount DECIMAL(10,2) NOT NULL,
+    purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+
+Purchase records:
+
+<?php
+session_start();
+include "db.php";
+
+// Ensure only authorized users access this page
+if (!isset($_SESSION["user"]) || ($_SESSION["role"] !== "admin" && $_SESSION["role"] !== "manager" && $_SESSION["role"] !== "salesman")) {
+    header("Location: login.php?error=Unauthorized access.");
+    exit;
+}
+
+// Fetch purchases from database
+$result = $conn->query("SELECT * FROM purchases ORDER BY purchase_date DESC");
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Purchases</title>
+    <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+    <h2>📋 Purchase Records</h2>
+
+    <table border="1">
+        <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Medicines</th>
+            <th>Total Amount</th>
+            <th>Purchase Date</th>
+        </tr>
+        <?php while ($row = $result->fetch_assoc()): ?>
+            <tr>
+                <td><?= htmlspecialchars($row["username"]) ?></td>
+                <td><?= htmlspecialchars($row["role"]) ?></td>
+                <td><?= htmlspecialchars($row["medicines"]) ?></td>
+                <td>$<?= number_format($row["total_amount"], 2) ?></td>
+                <td><?= $row["purchase_date"] ?></td>
+            </tr>
+        <?php endwhile; ?>
+    </table>
+
+    <a href="index.php">🏠 Back to Home</a>
+</body>
+</html>
+
